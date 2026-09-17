@@ -1,0 +1,14 @@
+backups/
+logs/
+*.log
+*.tmp
+infra/mongo_data/
+infra/postgres_data/
+infra/.env
+configs/Logs/
+configs/Sessions/
+configs/config.yml
+configs/fix-client.cfg
+env/
+/env
+scripts/setup.sh

@@ -1,0 +1,137 @@
+# Infra (DB) VM — 8 vCPU / 16 GB RAM / 350 GB SSD
+#
+# MongoDB, PostgreSQL, and the three Redis caches, plus the local
+# node-exporter/cadvisor agents that let the Monitoring VM scrape this
+# host's metrics. Kafka is NOT here — it moved to the App VM (see
+# ../app-vm/kafka/compose.yml) since the sizing table groups it with
+# "Application + Kafka + NGINX".
+#
+# This VM has no other VM's containers on its Docker network — the App VM
+# reaches these services over the private LAN via published ports, not
+# Docker DNS. Firewall these ports (27017, 5432, 16379-16381) to only
+# accept connections from the App VM's private IP; firewall 9100/8080 to
+# only accept connections from the Monitoring VM's private IP.
+
+networks:
+  infra-net:
+    name: infra-net
+
+volumes:
+  mongo_data:
+  postgres_data:
+
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: prod-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD}
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [infra-net]
+
+  postgres:
+    image: postgres:15
+    container_name: ${OMS_DB_HOST}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${OMS_DB_NAME}
+      POSTGRES_USER: ${OMS_DB_USER_NAME}
+      POSTGRES_PASSWORD: ${OMS_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${OMS_DB_USER_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [infra-net]
+
+  fix-cache:
+    image: redis/redis-stack-server:latest
+    container_name: prod-fix-cache
+    restart: unless-stopped
+    environment:
+      REDIS_ARGS: "--requirepass ${FIX_REDIS_PASSWORD}"
+    ports:
+      - "16379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${FIX_REDIS_PASSWORD} ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [infra-net]
+
+  itch-cache:
+    image: redis/redis-stack-server:latest
+    container_name: prod-itch-cache
+    restart: unless-stopped
+    environment:
+      REDIS_ARGS: "--requirepass ${ITCH_REDIS_PASSWORD}"
+    ports:
+      - "16380:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${ITCH_REDIS_PASSWORD} ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [infra-net]
+
+  oms-cache:
+    image: redis/redis-stack-server:latest
+    container_name: prod-oms-cache
+    restart: unless-stopped
+    environment:
+      REDIS_ARGS: "--requirepass ${OMS_REDIS_PASSWORD}"
+    ports:
+      - "16381:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${OMS_REDIS_PASSWORD} ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [infra-net]
+
+  # ---- Local monitoring agents, scraped remotely by the Monitoring VM ----
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: prod-infra-node-exporter
+    restart: unless-stopped
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    ports:
+      - "9100:9100"
+    networks: [infra-net]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: prod-infra-cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    ports:
+      - "8080:8080"
+    networks: [infra-net]

@@ -1,0 +1,30 @@
+# Real credentials — never commit
+env/*.env
+
+# MongoDB / PostgreSQL data (bind-mounted by compose.yml)
+mongo_data/
+postgres_data/
+
+# Backup output — real data; keep the folders present via .gitkeep
+backups/*/*
+!backups/*/.gitkeep
+
+logs/
+*.log
+*.tmp
+
+
+backups/
+logs/
+*.log
+*.tmp
+infra/mongo_data/
+infra/postgres_data/
+infra/.env
+configs/Logs/
+configs/Sessions/
+configs/config.yml
+configs/fix-client.cfg
+env/
+/env
+scripts/setup.sh

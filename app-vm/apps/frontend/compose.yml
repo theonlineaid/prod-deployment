@@ -1,0 +1,15 @@
+networks:
+  app-net:
+    external: true
+    name: app-net
+
+services:
+  frontend:
+    image: reg.benemoy.net/oms/oms-dashboard-frontend:1.0.7
+    container_name: prod-frontend
+    env_file:
+      - ../../env/frontend.env
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+    networks: [app-net]

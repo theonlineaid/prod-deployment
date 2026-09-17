@@ -1,0 +1,9 @@
+# Real credentials — never commit
+env/*.env
+
+# Prometheus/Grafana data are named Docker volumes, not bind-mounted here
+# — nothing else to ignore.
+
+logs/
+*.log
+*.tmp

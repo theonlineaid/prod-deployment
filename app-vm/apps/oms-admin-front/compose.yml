@@ -1,0 +1,15 @@
+networks:
+  app-net:
+    external: true
+    name: app-net
+
+services:
+  oms-admin-front:
+    image: reg.benemoy.net/oms/admin-panel:v1.0.4
+    container_name: prod-oms-admin-front
+    env_file:
+      - ../../env/oms-admin-front.env
+    ports:
+      - "${HOST_PORT:-3001}:3000"
+    restart: unless-stopped
+    networks: [app-net]

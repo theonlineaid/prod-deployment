@@ -1,0 +1,28 @@
+networks:
+  app-net:
+    external: true
+    name: app-net
+
+services:
+  fix-initiator:
+    image: reg.benemoy.net/oms/fix-initiator:v1.0.1
+    container_name: prod-fix-initiator
+    profiles: ["fix"]
+    command: ["sh", "-c", "python client.py client.cfg"]
+    env_file:
+      - ../../env/fix-initiator.env
+    restart: unless-stopped
+    # NOTE: mongodb and fix-cache live on the Infra VM, not this compose
+    # project — no same-project depends_on/service_healthy is possible
+    # across VMs. fix-initiator.env's MONGODB_HOST/FIX_REDIS_HOST must
+    # point at the Infra VM's private IP; ensure the Infra VM stack is up
+    # before starting this service.
+    volumes:
+      - ../../configs/Logs:/fix_initiator/Logs
+      - ../../configs/Sessions:/fix_initiator/Sessions
+      - ../../env/fix-initiator.env:/fix_initiator/.env:ro
+      - ../../configs/fix-client.cfg:/fix_initiator/client.cfg:ro
+      - ../../configs/spec:/fix_initiator/spec:ro
+    ports:
+      - "5000:5000"
+    networks: [app-net]

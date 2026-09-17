@@ -1,0 +1,19 @@
+networks:
+  app-net:
+    external: true
+    name: app-net
+
+services:
+  itch-chart-service:
+    image: reg.benemoy.net
+    container_name: prod-itch-chart-service
+    env_file:
+      - ../../env/itch-chart-service.env
+    volumes:
+      - ../../env/itch-chart-service.env:/app/.env:ro
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    # NOTE: mongodb lives on the Infra VM. itch-chart-service.env's
+    # MONGODB_HOST must point at the Infra VM's private IP.
+    networks: [app-net]

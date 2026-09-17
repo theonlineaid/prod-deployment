@@ -1,0 +1,22 @@
+networks:
+  app-net:
+    external: true
+    name: app-net
+
+services:
+  # C++ rewrite (github.com/Sky-Soft-Limited/itch-cpp): single process,
+  # off by default (see README.md, "itch-server"). Mongo/Redis/feed config
+  # comes entirely from configs/config.yml — MONGODB and Redis hosts there
+  # must point at the Infra VM's private IP since those services aren't on
+  # this VM.
+  itch-cpp-service:
+    image: reg.benemoy.net/oms/itch-cpp:1.0.0
+    container_name: prod-itch-cpp-service
+    restart: unless-stopped
+    volumes:
+      - ../../configs/config.yml:/etc/itch/config.yml:ro
+      - ../../logs/itch-service:/app/logs
+    ports:
+      - "8765:8000"
+      - "9001:9001"
+    networks: [app-net]

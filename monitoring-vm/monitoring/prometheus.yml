@@ -1,0 +1,71 @@
+# Fill in the two placeholder private IPs below before starting this
+# stack: <INFRA_VM_PRIVATE_IP> and <APP_VM_PRIVATE_IP>. Prometheus config
+# has no env-var substitution, so these must be edited in place (not via
+# an .env file).
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Infra (DB) VM — MongoDB/PostgreSQL/Redis host
+  - job_name: node-exporter-infra
+    static_configs:
+      - targets: ["<INFRA_VM_PRIVATE_IP>:9100"]
+        labels:
+          service: host
+          vm: infra-vm
+
+  - job_name: cadvisor-infra
+    static_configs:
+      - targets: ["<INFRA_VM_PRIVATE_IP>:8080"]
+        labels:
+          service: containers
+          vm: infra-vm
+
+  # Application + Kafka + NGINX VM
+  - job_name: node-exporter-app
+    static_configs:
+      - targets: ["<APP_VM_PRIVATE_IP>:9100"]
+        labels:
+          service: host
+          vm: app-vm
+
+  - job_name: cadvisor-app
+    static_configs:
+      - targets: ["<APP_VM_PRIVATE_IP>:8080"]
+        labels:
+          service: containers
+          vm: app-vm
+
+  - job_name: kafka
+    static_configs:
+      - targets: ["<APP_VM_PRIVATE_IP>:9308"]
+        labels:
+          service: kafka
+          vm: app-vm
+
+  # Uses blackbox_exporter to probe the public endpoints over HTTPS. This
+  # stands in for real /health endpoints since no app code is being edited.
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://<PROD_DOMAIN_FRONTEND>
+          - https://<PROD_DOMAIN_OMS_ADMIN_FRONTEND>
+          - https://<PROD_DOMAIN_OMS_ADMIN_BACKEND>/api/docs/
+          - https://<PROD_DOMAIN_ITCH_CHART>
+          - https://<PROD_DOMAIN_ITCH_SERVICE>
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

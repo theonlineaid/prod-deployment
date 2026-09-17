@@ -1,0 +1,5 @@
+# WebSocket Connection-header map lives here once instead.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}

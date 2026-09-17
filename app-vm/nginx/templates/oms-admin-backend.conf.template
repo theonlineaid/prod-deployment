@@ -1,0 +1,36 @@
+server {
+    listen 80;
+    server_name ${NGINX_DOMAIN_OMS_ADMIN_BACKEND};
+    client_max_body_size 100M;
+    location ^~ /media/ {
+        proxy_pass http://oms-admin:8007;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+    location / {
+        proxy_pass http://oms-admin:8007;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_redirect off;
+        proxy_buffer_size 64k;
+        proxy_buffers 8 64k;
+        proxy_busy_buffers_size 128k;
+        proxy_max_temp_file_size 0;
+
+        # WebSocket (wss://) support — without these, nginx's default 60s
+        # read/send timeout silently drops idle socket connections.
+        proxy_socket_keepalive on;
+        proxy_connect_timeout 75s;
+        proxy_send_timeout 3600s;
+        proxy_read_timeout 3600s;
+        proxy_buffering off;
+    }
+}

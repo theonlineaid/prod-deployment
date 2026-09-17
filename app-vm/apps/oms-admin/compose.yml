@@ -1,0 +1,106 @@
+networks:
+  app-net:
+    external: true
+    name: app-net
+
+volumes:
+  oms_admin_media:
+
+# NOTE: postgres and oms-cache live on the Infra VM, not this compose
+# project — no same-project depends_on/service_healthy is possible across
+# VMs. oms-admin.env's OMS_DB_HOST/REDIS_HOST must point at the Infra VM's
+# private IP; ensure the Infra VM stack is up (and reachable) before
+# starting these services, since `migrate`/`create_kafka_topics` etc. run
+# at container start and will fail fast if it isn't.
+
+services:
+  oms-admin:
+    image: reg.benemoy.net/oms/oms-admin:v1.0.0
+    container_name: prod-oms-admin
+    command:
+      - sh
+      - -c
+      - >
+        python manage.py collectstatic --no-input &&
+        python manage.py migrate &&
+        python manage.py event_cmd &&
+        python manage.py create_superusers &&
+        python manage.py consumersyncinvestor &&
+        python manage.py store_user_group_permission &&
+        python manage.py create_kafka_topics &&
+        python manage.py create_schedulers &&
+        python manage.py oms_tables &&
+        python manage.py order_dependency_resolve &&
+        python manage.py runserver 0.0.0.0:8007
+    env_file:
+      - ../../env/oms-admin.env
+    environment:
+      DEPLOYMENT_NAME: oms_admin
+    volumes:
+      - ../../logs/oms-admin:/var/log/oms_admin
+      - oms_admin_media:/oms_admin/media
+      - ../../env/oms-admin.env:/oms_admin/.env:ro
+    ports:
+      - "8007:8007"
+    restart: unless-stopped
+    networks: [app-net]
+
+  oms-admin-celery-worker:
+    image: reg.benemoy.net/oms/oms-admin:v1.0.0
+    container_name: prod-oms-admin-celery-worker
+    command: ["celery", "-A", "core", "worker", "-l", "INFO", "--concurrency=12"]
+    env_file:
+      - ../../env/oms-admin.env
+    environment:
+      DEPLOYMENT_NAME: oms_admin
+    volumes:
+      - ../../logs/oms-admin:/var/log/oms_admin
+      - oms_admin_media:/oms_admin/media
+      - ../../env/oms-admin.env:/oms_admin/.env:ro
+    restart: unless-stopped
+    networks: [app-net]
+
+  oms-admin-celery-beat:
+    image: reg.benemoy.net/oms/oms-admin:v1.0.0
+    container_name: prod-oms-admin-celery-beat
+    command: ["celery", "-A", "core", "beat", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler", "--max-interval", "10"]
+    env_file:
+      - ../../env/oms-admin.env
+    environment:
+      DEPLOYMENT_NAME: oms_admin
+    volumes:
+      - ../../logs/oms-admin:/var/log/oms_admin
+      - oms_admin_media:/oms_admin/media
+      - ../../env/oms-admin.env:/oms_admin/.env:ro
+    restart: unless-stopped
+    networks: [app-net]
+
+  oms-admin-flower:
+    image: reg.benemoy.net/oms/oms-admin:v1.0.0
+    container_name: prod-oms-admin-flower
+    command: ["celery", "-A", "core", "flower", "--host", "0.0.0.0", "--port=5555"]
+    env_file:
+      - ../../env/oms-admin.env
+    environment:
+      DEPLOYMENT_NAME: oms_admin
+    volumes:
+      - ../../logs/oms-admin:/var/log/oms_admin
+      - ../../env/oms-admin.env:/oms_admin/.env:ro
+    ports:
+      - "5556:5555"
+    restart: unless-stopped
+    networks: [app-net]
+
+  oms-redis-streaming:
+    image: reg.benemoy.net/oms/oms-admin:v1.0.0
+    container_name: prod-oms-redis-streaming
+    command: ["sh", "-c", "python redis_stream/consumers.py"]
+    env_file:
+      - ../../env/oms-admin.env
+    environment:
+      DEPLOYMENT_NAME: oms_admin
+    volumes:
+      - ../../logs/oms-admin:/var/log/oms_admin
+      - ../../env/oms-admin.env:/oms_admin/.env:ro
+    restart: unless-stopped
+    networks: [app-net]

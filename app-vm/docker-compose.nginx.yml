@@ -1,0 +1,22 @@
+networks:
+  app-net:
+    external: true
+    name: app-net
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: prod-nginx
+    restart: unless-stopped
+    env_file:
+      - ./env/nginx.env
+    environment:
+      # Restrict envsubst to our own NGINX_DOMAIN_* vars only — without
+      # this filter it substitutes every ${VAR}/$VAR in the templates,
+      # which would blank out nginx's own $host/$remote_addr/etc.
+      NGINX_ENVSUBST_FILTER: "^NGINX_DOMAIN_"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+    ports:
+      - "80:80"
+    networks: [app-net]

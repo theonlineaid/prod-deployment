@@ -1,0 +1,9 @@
+server {
+    listen 80;
+    server_name ${NGINX_DOMAIN_ITCH_CHART};
+    location / {
+        proxy_pass http://itch-chart-service:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}

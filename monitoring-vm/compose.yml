@@ -1,0 +1,60 @@
+# Monitoring VM — 4 vCPU / 4 GB RAM / 50 GB SSD
+#
+# Only the central monitoring services live here: Prometheus, Grafana,
+# blackbox-exporter. node-exporter/cadvisor run locally on the Infra and
+# App VMs instead (see ../infra-vm/compose.yml and
+# ../app-vm/docker-compose.monitoring-agent.yml) — Prometheus below
+# scrapes them remotely over the private LAN. kafka-exporter is
+# co-located with Kafka on the App VM for the same reason.
+#
+# Firewall: this VM only needs OUTBOUND access to the Infra VM
+# (9100, 8080) and App VM (9100, 8080, 9308) private IPs, plus outbound
+# internet access for blackbox-exporter's public HTTPS probes. Grafana
+# (3005) should be restricted to admin IPs / a VPN, not exposed publicly.
+
+networks:
+  monitoring-net:
+    name: monitoring-net
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prod-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks: [monitoring-net]
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: prod-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3005:3000"
+    depends_on:
+      - prometheus
+    networks: [monitoring-net]
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: prod-blackbox-exporter
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    command:
+      - "--config.file=/etc/blackbox_exporter/config.yml"
+    ports:
+      - "9115:9115"
+    networks: [monitoring-net]
