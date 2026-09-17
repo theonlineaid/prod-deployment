@@ -1,16 +1,20 @@
 # Infra (DB) VM — 8 vCPU / 16 GB RAM / 350 GB SSD
 #
 # MongoDB, PostgreSQL, and the three Redis caches, plus the local
-# node-exporter/cadvisor agents that let the Monitoring VM scrape this
-# host's metrics. Kafka is NOT here — it moved to the App VM (see
-# ../app-vm/kafka/compose.yml) since the sizing table groups it with
-# "Application + Kafka + NGINX".
+# node-exporter/cadvisor/alloy agents. node-exporter/cadvisor are
+# scraped remotely by the Monitoring VM's Prometheus; alloy instead
+# pushes this VM's container logs outbound to the Monitoring VM's Loki
+# (see monitoring/config.alloy). Kafka is NOT here — it moved to the App
+# VM (see ../app-vm/kafka/compose.yml) since the sizing table groups it
+# with "Application + Kafka + NGINX".
 #
 # This VM has no other VM's containers on its Docker network — the App VM
 # reaches these services over the private LAN via published ports, not
 # Docker DNS. Firewall these ports (27017, 5432, 16379-16381) to only
-# accept connections from the App VM's private IP; firewall 9100/8080 to
-# only accept connections from the Monitoring VM's private IP.
+# accept connections from the App VM's private IP; firewall
+# 9100/8080/12345 to only accept connections from the Monitoring VM's
+# private IP; allow OUTBOUND 3100 to the Monitoring VM's private IP for
+# alloy's log push.
 
 networks:
   infra-net:
@@ -19,6 +23,7 @@ networks:
 volumes:
   mongo_data:
   postgres_data:
+  alloy_data:
 
 services:
   mongodb:
@@ -134,4 +139,24 @@ services:
       - /dev/disk:/dev/disk:ro
     ports:
       - "8080:8080"
+    networks: [infra-net]
+
+  # Pushes this VM's Docker container logs to the Monitoring VM's Loki
+  # (see monitoring/config.alloy — fill in <MONITORING_VM_PRIVATE_IP>
+  # there before starting this stack).
+  alloy:
+    image: grafana/alloy:latest
+    container_name: prod-infra-alloy
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy/data
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - "/etc/alloy/config.alloy"
+    ports:
+      - "12345:12345"
     networks: [infra-net]

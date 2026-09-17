@@ -28,12 +28,22 @@ cross-VM traffic goes over the VMs' private LAN via published ports.
   Kafka is co-located here because its producers/consumers
   (`oms-admin`, `fix-initiator`) are also here, keeping that traffic
   on the VM's own Docker network instead of crossing the LAN.
-- **`monitoring-vm/`** — Prometheus, Grafana, blackbox-exporter only.
-  node-exporter and cadvisor run **locally** on `infra-vm` and `app-vm`
-  instead (that's the standard Prometheus pattern — agents run next to
-  what they measure) and get scraped remotely from here. kafka-exporter
-  is co-located with Kafka on `app-vm` for the same reason. This VM is
-  deliberately light — it holds no application data.
+- **`monitoring-vm/`** — Prometheus, Grafana, blackbox-exporter, Loki.
+  node-exporter, cadvisor, and Grafana Alloy run **locally** on `infra-vm`
+  and `app-vm` instead (that's the standard Prometheus/Loki pattern —
+  agents run next to what they measure/collect). Prometheus scrapes the
+  exporters remotely from here; Alloy runs the other direction, pushing
+  each VM's Docker container logs to Loki here. kafka-exporter is
+  co-located with Kafka on `app-vm` for the same reason as the other
+  exporters. This VM is deliberately light — it holds no application
+  data, only metrics/log storage.
+
+  Loki + Alloy are the log pipeline (`Alloy → Loki`) for this stack;
+  they're deployed now, ahead of any log-consuming tooling, so logs are
+  already centralized when that's added later. Alloy (not Promtail) is
+  used here since Promtail is Grafana's deprecated log shipper — Alloy is
+  its replacement and can also collect metrics/traces later if this
+  stack adds Tempo.
 
 ```
 ┌─────────────────────┐        ┌──────────────────────────┐        ┌─────────────────────────────┐
@@ -42,13 +52,16 @@ cross-VM traffic goes over the VMs' private LAN via published ports.
 │                      │        │                           │        │                              │
 │  prometheus ─scrape──┼───────►│  node-exporter :9100      │        │  node-exporter :9100 ◄──────┼──scrape (prometheus)
 │  grafana             │        │  cadvisor      :8080      │◄───────┼──scrape (prometheus)         │
-│  blackbox-exporter   │        │                           │        │  cadvisor      :8080         │
-│      │               │        │  mongodb    :27017 ◄──────┼────────┼──(oms-admin, fix-initiator,  │
-│      │ probe (HTTPS) │        │  postgres   :5432  ◄──────┼────────┼── itch-*)                    │
-│      ▼               │        │  fix-cache  :16379 ◄──────┼────────┼──                             │
-│  public domains       │        │  itch-cache :16380 ◄──────┼────────┼──                             │
-│  (via nginx on        │        │  oms-cache  :16381 ◄──────┼────────┼──                             │
-│   app-vm)             │        │                           │        │  kafka :9092 (local only)    │
+│  blackbox-exporter   │        │  alloy         :12345     │◄───────┼──scrape (prometheus)         │
+│  loki       :3100 ◄──┼────────┼──push (alloy)             │        │  cadvisor      :8080         │
+│      │           ▲   │        │                           │        │  alloy         :12345        │
+│      │           └───┼────────┼───────────────────────────┼────────┼──push (alloy)                 │
+│      │ probe (HTTPS) │        │  mongodb    :27017 ◄──────┼────────┼──(oms-admin, fix-initiator,  │
+│      ▼               │        │  postgres   :5432  ◄──────┼────────┼── itch-*)                    │
+│  public domains       │        │  fix-cache  :16379 ◄──────┼────────┼──                             │
+│  (via nginx on        │        │  itch-cache :16380 ◄──────┼────────┼──                             │
+│   app-vm)             │        │  oms-cache  :16381 ◄──────┼────────┼──                             │
+│                      │        │                           │        │  kafka :9092 (local only)    │
 └──────────┬────────────┘        └───────────────────────────┘        │  kafka-exporter :9308 ◄───────┼──scrape (prometheus)
            │                                                          │  nginx :80 ◄──────────────────┼── internet (via Cloudflare)
            └──────────────────────── scrape (:9308) ───────────────────►                              │
@@ -82,14 +95,21 @@ cross-VM traffic goes over the VMs' private LAN via published ports.
    - Redis/Mongo/Postgres passwords must match **exactly** between
      `infra-vm/env/infra.env` and every app-vm/monitoring-vm file that
      references them (called out in each `.example` file).
+   - `<MONITORING_VM_PRIVATE_IP>` in `app-vm/monitoring/config.alloy` and
+     `infra-vm/monitoring/config.alloy` — same hand-edit as
+     `prometheus.yml`'s IP placeholders (no env-var substitution here
+     either).
 3. **Firewall rules** (per VM's security group / ufw):
    - `infra-vm`: allow 27017, 5432, 16379-16381 from `app-vm`'s IP only;
-     allow 9100, 8080 from `monitoring-vm`'s IP only.
-   - `app-vm`: allow 9100, 8080, 9308 from `monitoring-vm`'s IP only;
-     allow 80/443 from the internet (or from Cloudflare's ranges, same as
-     UAT — TLS is terminated at Cloudflare, not here).
+     allow 9100, 8080, 12345 from `monitoring-vm`'s IP only; allow
+     OUTBOUND 3100 to `monitoring-vm`'s IP (alloy's log push).
+   - `app-vm`: allow 9100, 8080, 9308, 12345 from `monitoring-vm`'s IP
+     only; allow OUTBOUND 3100 to `monitoring-vm`'s IP (alloy's log
+     push); allow 80/443 from the internet (or from Cloudflare's ranges,
+     same as UAT — TLS is terminated at Cloudflare, not here).
    - `monitoring-vm`: allow 3005 (Grafana) from admin IPs / VPN only —
      never expose it publicly. 9090 (Prometheus) similarly restricted.
+     Allow INBOUND 3100 (Loki) from `infra-vm`'s and `app-vm`'s IPs only.
 4. Confirm `app-vm/configs/fix-client.cfg`'s exchange endpoint is the real
    prod endpoint (not a sandbox) before starting `fix-initiator` — same
    warning as UAT's `README.md`.

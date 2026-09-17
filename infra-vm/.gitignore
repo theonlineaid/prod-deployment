@@ -4,6 +4,7 @@ env/*.env
 # MongoDB / PostgreSQL data (bind-mounted by compose.yml)
 mongo_data/
 postgres_data/
+alloy_data/
 
 # Backup output — real data; keep the folders present via .gitkeep
 backups/*/*

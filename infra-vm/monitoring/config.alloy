@@ -1,0 +1,38 @@
+// Fill in <MONITORING_VM_PRIVATE_IP> below before starting this stack.
+// Alloy has no env-var substitution here (same limitation as
+// ../../monitoring-vm/monitoring/prometheus.yml), so it must be edited in
+// place, not via an .env file.
+
+discovery.docker "containers" {
+	host             = "unix:///var/run/docker.sock"
+	refresh_interval = "15s"
+}
+
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+
+	rule {
+		target_label = "vm"
+		replacement  = "infra-vm"
+	}
+}
+
+loki.source.docker "containers" {
+	host             = "unix:///var/run/docker.sock"
+	targets          = discovery.docker.containers.targets
+	relabel_rules    = discovery.relabel.containers.rules
+	forward_to       = [loki.write.default.receiver]
+	refresh_interval = "15s"
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://<MONITORING_VM_PRIVATE_IP>:3100/loki/api/v1/push"
+	}
+}

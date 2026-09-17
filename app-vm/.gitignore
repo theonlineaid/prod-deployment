@@ -12,3 +12,4 @@ configs/fix-client.cfg
 env/
 /env
 scripts/setup.sh
+alloy_data/

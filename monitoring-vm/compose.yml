@@ -1,16 +1,24 @@
 # Monitoring VM — 4 vCPU / 4 GB RAM / 50 GB SSD
 #
-# Only the central monitoring services live here: Prometheus, Grafana,
-# blackbox-exporter. node-exporter/cadvisor run locally on the Infra and
-# App VMs instead (see ../infra-vm/compose.yml and
+# The central monitoring services live here: Prometheus, Grafana,
+# blackbox-exporter, Loki. node-exporter/cadvisor/promtail run locally on
+# the Infra and App VMs instead (see ../infra-vm/compose.yml and
 # ../app-vm/docker-compose.monitoring-agent.yml) — Prometheus below
-# scrapes them remotely over the private LAN. kafka-exporter is
-# co-located with Kafka on the App VM for the same reason.
+# scrapes the exporters remotely over the private LAN, while Promtail on
+# those VMs pushes logs to Loki (reverse direction from the metrics
+# scrape). kafka-exporter is co-located with Kafka on the App VM for the
+# same reason as the other exporters.
 #
-# Firewall: this VM only needs OUTBOUND access to the Infra VM
-# (9100, 8080) and App VM (9100, 8080, 9308) private IPs, plus outbound
-# internet access for blackbox-exporter's public HTTPS probes. Grafana
-# (3005) should be restricted to admin IPs / a VPN, not exposed publicly.
+# Firewall: this VM needs OUTBOUND access to the Infra VM (9100, 8080)
+# and App VM (9100, 8080, 9308) private IPs, plus outbound internet
+# access for blackbox-exporter's public HTTPS probes. It also needs
+# INBOUND 3100 (Loki push) from the Infra VM and App VM private IPs only.
+# Grafana (3005) and Loki (3100) should both be restricted to admin IPs /
+# a VPN / the other VMs — never exposed publicly.
+#
+# Loki here uses single-binary mode with local filesystem storage (no
+# S3/GCS) — fine for this VM's scale; revisit if log volume grows past
+# what the 50 GB SSD can hold at the configured retention_period.
 
 networks:
   monitoring-net:
@@ -19,6 +27,7 @@ networks:
 volumes:
   prometheus_data:
   grafana_data:
+  loki_data:
 
 services:
   prometheus:
@@ -57,4 +66,17 @@ services:
       - "--config.file=/etc/blackbox_exporter/config.yml"
     ports:
       - "9115:9115"
+    networks: [monitoring-net]
+
+  loki:
+    image: grafana/loki:latest
+    container_name: prod-loki
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    command:
+      - "--config.file=/etc/loki/loki.yml"
+    ports:
+      - "3100:3100"
     networks: [monitoring-net]

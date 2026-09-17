@@ -49,6 +49,20 @@ scrape_configs:
           service: kafka
           vm: app-vm
 
+  - job_name: alloy-infra
+    static_configs:
+      - targets: ["<INFRA_VM_PRIVATE_IP>:12345"]
+        labels:
+          service: alloy
+          vm: infra-vm
+
+  - job_name: alloy-app
+    static_configs:
+      - targets: ["<APP_VM_PRIVATE_IP>:12345"]
+        labels:
+          service: alloy
+          vm: app-vm
+
   # Uses blackbox_exporter to probe the public endpoints over HTTPS. This
   # stands in for real /health endpoints since no app code is being edited.
   - job_name: blackbox-http

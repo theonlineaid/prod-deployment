@@ -3,6 +3,10 @@
 # kafka-exporter lives here (not on the Monitoring VM) because it's
 # co-located with Kafka on this VM's app-net network.
 #
+# alloy pushes this VM's Docker container logs to the Monitoring VM's
+# Loki (see monitoring/config.alloy — fill in <MONITORING_VM_PRIVATE_IP>
+# there before starting this stack).
+#
 # Joins app-net (created by kafka/compose.yml or apps/*/compose.yml) —
 # bring at least one of those up first.
 
@@ -10,6 +14,9 @@ networks:
   app-net:
     external: true
     name: app-net
+
+volumes:
+  alloy_data:
 
 services:
   node-exporter:
@@ -52,4 +59,21 @@ services:
       - "--kafka.server=kafka:9092"
     ports:
       - "9308:9308"
+    networks: [app-net]
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: prod-app-alloy
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy/data
+    command:
+      - "run"
+      - "--server.http.listen-addr=0.0.0.0:12345"
+      - "--storage.path=/var/lib/alloy/data"
+      - "/etc/alloy/config.alloy"
+    ports:
+      - "12345:12345"
     networks: [app-net]
